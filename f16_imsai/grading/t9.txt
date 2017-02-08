@@ -1,0 +1,11 @@
+Entry      Reason
+==================================================
+- 4.8      See previous notes on component
+           spreadsheet.
+- 3.2      See previous notes on build-and-test
+           procedures.
+- 3.2      Overall calculations are corrupted
+           somewhere in the book. See 'Indiv' tab.
+-10.       No DS1631 functionality.
+
+Notes: 
