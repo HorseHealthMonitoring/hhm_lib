@@ -1,7 +1,0 @@
-Entry      Reason
-==================================================
--3.2        Schematic errata document not updated.
--8          Component justification not updated.
--8          Build-and-test procedures not updated.
-
-Notes: 

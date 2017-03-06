@@ -1,8 +1,0 @@
-^build$
-.*\.pyc
-.sconsign.dblite
-.*\.o
-.*\.hex
-.*\.elf
-.*\.a
-^netId_.*$

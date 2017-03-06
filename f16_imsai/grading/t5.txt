@@ -1,6 +1,0 @@
-Entry      Reason
-==================================================
-- 1.6      Schematic errata is formatted by task
-           and was not updated for T5.
-
-Notes: great work.
