@@ -7,6 +7,7 @@
 #define FONA_TX 9
 #define FONA_RST 4
 #define LED_PIN 8
+#define ONE_MINUTE (1 * 10 * 1000UL)
 
 // this is a large buffer for replies
 char replybuffer[255];
@@ -19,7 +20,7 @@ int seconds = 8;
 int minutes = 0;
 int hours = 0;
 int interval = ((hours*60*60) + (minutes*60) + (seconds))/8;
-int timerCounter = 1;
+int timerCounter = 0;
 
 //Setup for pulse sensor.
 volatile int Signal;                // holds the incoming raw data
@@ -30,6 +31,9 @@ volatile int BPM;                   // int that holds raw Analog in 0. updated e
 volatile boolean QS = false;        // becomes true when Arduoino finds a beat.
 unsigned long lastTime; // used to time the Pulse Sensor samples
 unsigned long thisTime; // used to time the Pulse Sensor samples
+int grabber;
+int average;
+int grabCount;
 
 //ISR for watchdog timer.
 ISR(WDT_vect)
@@ -60,13 +64,12 @@ Adafruit_FONA fona = Adafruit_FONA(FONA_RST);
 
 void setup() {
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);
-  delay(3000);
-  digitalWrite(LED_PIN, LOW);
   while (!Serial);
   Serial.begin(115200);
   setupGsm();
   setupWdt();
+  interruptSetup();
+  digitalWrite(LED_PIN, HIGH);
 }
 
 void loop()
@@ -75,10 +78,16 @@ void loop()
   {
     if (timerCounter == interval)
     {
+      wdt_disable();
+      //Turn off watchdog so we can do stuff.
+
+      getPulse();
+      
       //Reset timer.
       timerCounter = 0;
+      //Turn watchdog back on.
+      setupWdt();
     }
-    
     /* Don't forget to clear the flag. */
     f_wdt = 0;
     
@@ -98,15 +107,6 @@ void setupGsm()
     Serial.println(F("Couldn't find FONA"));
     delay(1000);
   }
-  digitalWrite(LED_PIN, HIGH);
-  delay(500);
-  digitalWrite(LED_PIN, LOW);
-  delay(500);
-  digitalWrite(LED_PIN, HIGH);
-  delay(500);
-  digitalWrite(LED_PIN, LOW);
-  delay(500);
-  digitalWrite(LED_PIN, HIGH);
 }
 
 void enterSleep(void)
@@ -122,6 +122,28 @@ void enterSleep(void)
   
   /* Re-enable the peripherals. */
   power_all_enable();
+}
+
+void getPulse()
+{
+  grabber = 1000;
+  average = 0;
+  grabCount = 0;
+  for (int i = 0; i < 20001; i++)
+  {
+    delay(1);
+    if (i == grabber)
+    {
+      if ((BPM < 100) && (BPM > 50))
+      {
+        average += BPM;
+        grabCount += 1;
+      }
+      grabber += i;
+    }
+  }
+  Serial.println(average/grabCount);
+  delay(10);
 }
 
 void setupWdt()
