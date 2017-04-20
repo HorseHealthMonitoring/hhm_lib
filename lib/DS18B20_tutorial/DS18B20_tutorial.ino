@@ -9,7 +9,7 @@
 #include <avr/sleep.h>
 
 // Data wire is plugged into pin 2 on the Arduino
-#define ONE_WIRE_BUS 2
+#define ONE_WIRE_BUS 5
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature. 
@@ -17,7 +17,7 @@ DallasTemperature sensors(&oneWire);
 
 int sleepPin = 12;          // active LOW, ground this pin momentary to sleep
 int interruptPin = 10;      // LED to show the action of a interrupt
-int wakePin = 2;            // active LOW, ground this pin momentary to wake up
+int wakePin = 5;            // active LOW, ground this pin momentary to wake up
 int sleepStatus = 0;        // variable to store a request for sleep
 
 void setup(void)
@@ -31,7 +31,7 @@ void setup(void)
                                       // wakeUpNow when pin 2 gets LOW
   Sleep Stuff I added ends here, comment out if there is a */
   
-  Serial.begin(9600); //Begin serial communication
+  Serial.begin(115200); //Begin serial communication
   Serial.println("Arduino Digital Temperature // Serial Monitor Version"); //Print a message
   sensors.begin();
 

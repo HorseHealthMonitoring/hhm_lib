@@ -2,17 +2,28 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
 #include <avr/wdt.h>
+#include "OneWire.h"
+#include "DallasTemperature.h"
 
-#define FONA_RX 10
-#define FONA_TX 9
+#define FONA_RX 6
+#define FONA_TX 7
 #define FONA_RST 4
 #define LED_PIN 8
-#define ONE_MINUTE (1 * 10 * 1000UL)
+#define ONE_WIRE_BUS 5
+
+int systemIDNo = 1;
+char horseName[128];
+
+//Setup for temperature interface.
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+int wakePin = 5;
+int temp;
 
 // this is a large buffer for replies
-char replybuffer[255];
+char replyBuffer[255];
 char *SMSnumber = "6015962842";
-char stack[128] = {'c'};
+char stack[128];
 
 //Value for watchdog timer interrupt.
 volatile int f_wdt = 1;
@@ -69,19 +80,25 @@ void setup() {
   setupGsm();
   setupWdt();
   interruptSetup();
+  sensors.begin();
+  memset(&horseName, 0, sizeof(horseName));
+  sprintf(horseName, "Dasher");
   digitalWrite(LED_PIN, HIGH);
 }
 
 void loop()
 {
   if(f_wdt == 1)
-  {
+  {    
     if (timerCounter == interval)
     {
       wdt_disable();
       //Turn off watchdog so we can do stuff.
 
       getPulse();
+      getTemp();
+      Serial.println("sending...");
+      sendMetrics();
       
       //Reset timer.
       timerCounter = 0;
@@ -129,7 +146,7 @@ void getPulse()
   grabber = 1000;
   average = 0;
   grabCount = 0;
-  for (int i = 0; i < 20001; i++)
+  for (int i = 0; i < 30001; i++)
   {
     delay(1);
     if (i == grabber)
@@ -142,8 +159,21 @@ void getPulse()
       grabber += i;
     }
   }
-  Serial.println(average/grabCount);
-  delay(10);
+  average = average/grabCount;
+}
+
+void getTemp()
+{
+  sensors.requestTemperatures();
+  temp = sensors.getTempFByIndex(0);
+  delay(1);
+}
+
+void sendMetrics()
+{
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "From HHM System ID: %d, Horse Name: %s, Temperature: %d, Heartrate: %d. Next update in: %d hours, %d minutes, %d seconds.", systemIDNo, horseName, temp, average, hours, minutes, seconds);
+  fona.sendSMS(SMSnumber, stack);
 }
 
 void setupWdt()
@@ -163,5 +193,10 @@ void setupWdt()
   
   /* Enable the WD interrupt (note no reset). */
   WDTCSR |= _BV(WDIE);
+}
+
+void flushSerial() {
+  while (Serial.available())
+    Serial.read();
 }
 
