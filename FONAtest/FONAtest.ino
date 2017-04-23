@@ -11,8 +11,7 @@
 #define LED_PIN 8
 #define ONE_WIRE_BUS 5
 
-int systemIDNo = 1;
-char horseName[128];
+volatile int systemIDNo = 1;
 
 //Setup for temperature interface.
 OneWire oneWire(ONE_WIRE_BUS);
@@ -23,15 +22,14 @@ int temp;
 // this is a large buffer for replies
 char replyBuffer[255];
 char *SMSnumber = "6015962842";
-char stack[128];
+char *horseName = "Default";
 
 //Value for watchdog timer interrupt.
 volatile int f_wdt = 1;
-int seconds = 8;
-int minutes = 0;
-int hours = 0;
-int interval = ((hours*60*60) + (minutes*60) + (seconds))/8;
-int timerCounter = 0;
+volatile int seconds = 0;
+volatile int minutes = 30;
+volatile int hours = 0;
+volatile int timerCounter = 0;
 
 //Setup for pulse sensor.
 volatile int Signal;                // holds the incoming raw data
@@ -79,32 +77,120 @@ void setup() {
   Serial.begin(115200);
   setupGsm();
   setupWdt();
-  interruptSetup();
+  lastTime = micros();
   sensors.begin();
-  memset(&horseName, 0, sizeof(horseName));
-  sprintf(horseName, "Dasher");
   digitalWrite(LED_PIN, HIGH);
 }
 
 void loop()
 {
   if(f_wdt == 1)
-  {    
-    if (timerCounter == interval)
+  {
+    wdt_disable();
+    int interval = 0;
+    int nowFlag = 0;
+    int8_t smsnum = fona.getNumSMS();
+    if (smsnum > 0)
     {
-      wdt_disable();
-      //Turn off watchdog so we can do stuff.
+      delay(100);
+      readSMS();
+      Serial.println(replyBuffer);
+      if (strcmp(replyBuffer, "NOW") == 0)
+      {
+        nowFlag = 1;
+        Serial.println(F("Got a now."));
+      }
+      else if (strcmp(replyBuffer, "CN") == 0)
+      {
+        Serial.println(F("Change number command."));
+        fona.getSMSSender(smsnum, replyBuffer, 250);
+        SMSnumber = replyBuffer;
+        char *newNumber;
+        for (int k = 0; k < strlen(SMSnumber) + 1; k++)
+        {
+          Serial.println(SMSnumber[k]);
+          if (k > 0)
+          {
+            newNumber = appendCharToCharArray(newNumber, SMSnumber[k]);
+          }
+          else
+          {
+            continue;
+          }
+        }
+        SMSnumber = newNumber;
+        sendNumberChangeAck();
+      }
+      else if (strcmp(replyBuffer, "BAT") == 0)
+      {
+        Serial.println(F("Check battery command."));
+        sendBatteryAck();
+      }
+      else if (strcmp(replyBuffer, "CI") == 0)
+      {
+        Serial.println(F("Change interval command."));
+        changeInterval();
+      }
+      else if (strcmp(replyBuffer, "HELP") == 0)
+      {
+        Serial.println(F("Text help info command."));
+        sendHelp();
+      }
+      else if (strcmp(replyBuffer, "CHN") == 0)
+      {
+        Serial.println(F("Changing horse name."));
+        changeHorseName();
+      }
+      else if (strcmp(replyBuffer, "CID") == 0)
+      {
+        Serial.println(F("Changing device ID."));
+        changeDeviceID();
+      }
+      else
+      {
+        Serial.println(F("Text 'HELP'."));
+        askHelp();
+      }
 
-      getPulse();
+      deleteAllSMS();
+    }
+
+    interval = ((hours*60*60) + (minutes*60) + (seconds))/8;
+    Serial.println(interval);
+    Serial.println(timerCounter);
+    if ((timerCounter >= interval) || (nowFlag == 1))
+    {
+      //Turn off watchdog so we can do stuff.
+      average = 0;
+      grabCount = 0;
+      grabber = 1000;
+      
+      for (int i = 0; i < 30001; i++)
+      {
+        delay(1);
+        pollPulse();
+        if (i == grabber)
+        {
+          if ((BPM < 100) && (BPM > 50))
+          {
+          average += BPM;
+          grabCount += 1;
+          }
+          grabber += 1000;
+        }
+      }
+      average = average/grabCount;
+      Serial.println(average);
+      
       getTemp();
-      Serial.println("sending...");
+      Serial.println(F("Sending..."));
       sendMetrics();
       
       //Reset timer.
       timerCounter = 0;
       //Turn watchdog back on.
-      setupWdt();
     }
+    setupWdt();
     /* Don't forget to clear the flag. */
     f_wdt = 0;
     
@@ -141,38 +227,36 @@ void enterSleep(void)
   power_all_enable();
 }
 
-void getPulse()
+void pollPulse()
 {
-  grabber = 1000;
-  average = 0;
-  grabCount = 0;
-  for (int i = 0; i < 30001; i++)
+  thisTime = micros();
+  if (thisTime - lastTime > 2000)
   {
-    delay(1);
-    if (i == grabber)
-    {
-      if ((BPM < 100) && (BPM > 50))
-      {
-        average += BPM;
-        grabCount += 1;
-      }
-      grabber += i;
-    }
+    lastTime = thisTime;
+    getPulse();
   }
-  average = average/grabCount;
 }
-
 void getTemp()
 {
   sensors.requestTemperatures();
   temp = sensors.getTempFByIndex(0);
+  Serial.println(temp);
   delay(1);
 }
 
 void sendMetrics()
 {
+  char stack[128];
   memset(&stack, 0, sizeof(stack));
   sprintf(stack, "From HHM System ID: %d, Horse Name: %s, Temperature: %d, Heartrate: %d. Next update in: %d hours, %d minutes, %d seconds.", systemIDNo, horseName, temp, average, hours, minutes, seconds);
+  fona.sendSMS(SMSnumber, stack);
+}
+
+void sendNumberChangeAck()
+{
+  char stack[128];
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Successfully changed receiving phone number to: %s.", SMSnumber);
   fona.sendSMS(SMSnumber, stack);
 }
 
@@ -198,5 +282,164 @@ void setupWdt()
 void flushSerial() {
   while (Serial.available())
     Serial.read();
+}
+
+void readSMS()
+{
+    int8_t smsnum = fona.getNumSMS();
+    uint16_t smslen;
+    int8_t smsn = 1;
+
+    for ( ; smsn <= smsnum; smsn++) {
+      Serial.print(F("\n\rReading SMS #")); Serial.println(smsn);
+      if (!fona.readSMS(smsn, replyBuffer, 250, &smslen)) {  // pass in buffer and max len!
+        Serial.println(F("Failed!"));
+        break;
+      }
+      // if the length is zero, its a special case where the index number is higher
+      // so increase the max we'll look at!
+      if (smslen == 0) {
+        Serial.println(F("[empty slot]"));
+        smsnum++;
+        continue;
+      }
+
+      Serial.print(F("*****"));
+      Serial.println(replyBuffer);
+      Serial.println(F("*****"));
+    }
+}
+
+char* appendCharToCharArray(char* array, char a)
+{
+    size_t len = strlen(array);
+
+    char* ret = new char[len+2];
+
+    strcpy(ret, array);    
+    ret[len] = a;
+    ret[len+1] = '\0';
+
+    return ret;
+}
+
+void sendBatteryAck()
+{
+  char stack[128];
+  uint16_t vbat;
+  uint16_t pbat;
+  fona.getBattVoltage(&vbat);
+  fona.getBattPercent(&pbat);
+
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Battery voltage: %d mV, Battery percentage: %d %.", vbat, pbat);
+  fona.sendSMS(SMSnumber, stack);
+}
+
+void changeInterval()
+{
+  char stack[128];
+  int8_t smsnum = fona.getNumSMS();
+  deleteAllSMS();
+  sendIntervalChangeAck();
+  while (fona.getNumSMS() < 1)
+  {
+    Serial.println(F("Waiting..."));
+  }
+  readSMS();
+  int  secTemp = 0;
+  int minTemp = 0;
+  int hourTemp = 0;
+  Serial.println(replyBuffer);
+  hourTemp = atoi(replyBuffer + 1);
+  minTemp = atoi(replyBuffer + 4);
+  secTemp = atoi(replyBuffer + 7);
+  seconds = secTemp;
+  minutes = minTemp;
+  hours = hourTemp;
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Interval changed to: hours: %d, minutes: %d, seconds: %d.", hours, minutes, seconds);
+  fona.sendSMS(SMSnumber, stack);
+}
+
+void sendIntervalChangeAck()
+{
+  char stack[128];
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Changing interval. Please send in format: H--M--S--.");
+  fona.sendSMS(SMSnumber, stack);
+}
+
+void deleteAllSMS()
+{
+  int8_t smsnum = fona.getNumSMS();
+  for(int l = 1; l < (smsnum + 1); l++)
+  {
+    fona.deleteSMS(l);
+  }
+}
+
+void askHelp()
+{
+  char stack[128];
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "For help, send a 'HELP' text.");
+  fona.sendSMS(SMSnumber, stack);
+}
+
+void sendHelp()
+{
+  char stack[128];
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Commands: NOW (Get current status), CI (Change Interval), CN (Change Number), BAT (Battery Status), CHN (Change Horse Name), CID (Change Device ID).");
+  fona.sendSMS(SMSnumber, stack);
+}
+
+void changeHorseName()
+{
+  char stack[128];
+  int8_t smsnum = fona.getNumSMS();
+  deleteAllSMS();
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Enter new horse name.");
+  fona.sendSMS(SMSnumber, stack);
+  while (fona.getNumSMS() < 1)
+  {
+    Serial.println(F("Waiting..."));
+  }
+  readSMS();
+  deleteAllSMS();
+  horseName = replyBuffer;
+  char *newHorseName;
+  for (int h = 0; h < strlen(horseName) + 1; h++)
+  {
+    newHorseName = appendCharToCharArray(newHorseName, horseName[h]);
+  }
+  horseName = newHorseName;
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Horse name changed to: %s.", horseName);
+  fona.sendSMS(SMSnumber, stack);
+}
+
+void changeDeviceID()
+{
+  char stack[128];
+  int8_t smsnum = fona.getNumSMS();
+  deleteAllSMS();
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "Enter new device ID.");
+  fona.sendSMS(SMSnumber, stack);
+  while (fona.getNumSMS() < 1)
+  {
+    Serial.println(F("Waiting..."));
+  }
+  readSMS();
+  deleteAllSMS();
+  int tempID;
+  tempID = atoi(replyBuffer);
+  systemIDNo = tempID;
+  memset(&stack, 0, sizeof(stack));
+  sprintf(stack, "System ID No. changed to: %d.", systemIDNo);
+  fona.sendSMS(SMSnumber, stack);
 }
 

@@ -11,7 +11,7 @@ volatile int amp = 0;                   // used to hold amplitude of pulse wavef
 volatile boolean firstBeat = true;        // used to seed rate array so we startup with reasonable BPM
 volatile boolean secondBeat = false;      // used to seed rate array so we startup with reasonable BPM
 
-
+/*
 void interruptSetup(){  // CHECK OUT THE Timer_Interrupt_Notes TAB FOR MORE ON INTERRUPTS 
   // Initializes Timer2 to throw an interrupt every 2mS.
   TCCR2A = 0x02;     // DISABLE PWM ON DIGITAL PINS 3 AND 11, AND GO INTO CTC MODE
@@ -20,11 +20,11 @@ void interruptSetup(){  // CHECK OUT THE Timer_Interrupt_Notes TAB FOR MORE ON I
   TIMSK2 = 0x02;     // ENABLE INTERRUPT ON MATCH BETWEEN TIMER2 AND OCR2A
   sei();             // MAKE SURE GLOBAL INTERRUPTS ARE ENABLED
 }
-
+*/
 
 // THIS IS THE TIMER 2 INTERRUPT SERVICE ROUTINE.
 // Timer 2 makes sure that we take a reading every 2 miliseconds
-ISR(TIMER2_COMPA_vect){                         // triggered when Timer2 counts to 124
+void getPulse(){                         // triggered when Timer2 counts to 124
   cli();                                      // disable interrupts while we do this
   Signal = analogRead(pulsePin);              // read the Pulse Sensor
   sampleCounter += 2;                         // keep track of the time in mS with this variable
